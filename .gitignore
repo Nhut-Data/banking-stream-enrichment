@@ -1,0 +1,25 @@
+# Môi trường
+.env
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Data lớn — không commit, tải lại bằng make setup
+data/raw/
+data/output/
+
+# dbt
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+
+# Airflow
+airflow/logs/
+airflow/plugins/__pycache__/
+
+# IDE
+.vscode/
+.idea/
+*.swp

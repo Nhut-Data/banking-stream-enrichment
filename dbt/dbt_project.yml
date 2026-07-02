@@ -1,0 +1,19 @@
+name: banking_enrichment
+version: "1.0.0"
+config-version: 2
+
+profile: banking_enrichment
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+test-paths: ["tests"]
+
+models:
+  banking_enrichment:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: view
+    marts:
+      +materialized: table
