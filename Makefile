@@ -22,3 +22,8 @@ generate:
 
 test:
 	pytest tests/unit/ -v
+
+register-connector:
+	curl -X POST http://localhost:8083/connectors \
+		-H "Content-Type: application/json" \
+		-d @infra/debezium/connector-config.json

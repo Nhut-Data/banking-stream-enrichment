@@ -1,0 +1,48 @@
+{
+  "name": "berka-postgres-connector",
+  "config": {
+
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "replicator",
+    "database.password": "replicator_password",
+    "database.dbname": "berka",
+    "database.server.name": "berka",
+
+    "plugin.name": "pgoutput",
+
+    "slot.name": "berka_debezium_slot",
+    "publication.name": "berka_publication",
+    "publication.autocreate.mode": "filtered",
+
+    "table.include.list": "public.trans,public.client,public.disposition,public.account,public.district",
+
+    "topic.prefix": "cdc",
+
+    "transforms": "unwrap",
+    "transforms.unwrap.type": "io.debezium.transforms.ExtractNewRecordState",
+    "transforms.unwrap.drop.tombstones": "false",
+    "transforms.unwrap.delete.handling.mode": "rewrite",
+    "transforms.unwrap.add.fields": "op,table,lsn,source.ts_ms",
+
+    "snapshot.mode": "initial",
+
+    "key.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "key.converter.schemas.enable": "false",
+    "value.converter": "org.apache.kafka.connect.json.JsonConverter",
+    "value.converter.schemas.enable": "false",
+
+    "heartbeat.interval.ms": "30000",
+
+    "errors.tolerance": "all",
+    "errors.deadletterqueue.topic.name": "transactions.dlq",
+    "errors.deadletterqueue.topic.replication.factor": "1",
+    "errors.deadletterqueue.context.headers.enable": "true",
+
+    "max.batch.size": "2048",
+    "max.queue.size": "16384",
+    "poll.interval.ms": "500"
+  }
+}
