@@ -27,3 +27,9 @@ register-connector:
 	curl -X POST http://localhost:8083/connectors \
 		-H "Content-Type: application/json" \
 		-d @infra/debezium/connector-config.json
+
+load-data:
+	python3 infra/postgres/load_berka.py
+
+load-data-synthetic:
+	python3 infra/postgres/load_berka.py --synthetic
