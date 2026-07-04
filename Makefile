@@ -18,7 +18,7 @@ down:
 	docker compose down
 
 generate:
-	python -m data_generation.run
+	python3 -m data_generation.run
 
 test:
 	pytest tests/unit/ -v
