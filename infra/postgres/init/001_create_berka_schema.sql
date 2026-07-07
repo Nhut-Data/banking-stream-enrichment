@@ -208,6 +208,14 @@ CREATE TABLE IF NOT EXISTS trans (
     bank                VARCHAR(10),
     account             VARCHAR(20)
 );
+-- Grant owner cho replicator để tạo filtered publication
+-- Debezium yêu cầu user replicator phải là OWNER của bảng
+-- khi dùng publication.autocreate.mode = filtered
+ALTER TABLE district    OWNER TO replicator;
+ALTER TABLE account     OWNER TO replicator;
+ALTER TABLE client      OWNER TO replicator;
+ALTER TABLE disposition OWNER TO replicator;
+ALTER TABLE trans       OWNER TO replicator;
 
 COMMENT ON TABLE trans IS
     'Giao dịch ngân hàng — volume cao, CDC tracked qua Debezium → cdc.public.trans';
