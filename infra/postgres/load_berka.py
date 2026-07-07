@@ -39,7 +39,7 @@ logger = logging.getLogger(__name__)
 # Config
 # ---------------------------------------------------------------------------
 DB_CONFIG = {
-    "host":     os.environ.get("POSTGRES_HOST", "localhost"),
+    "host":     os.environ.get("POSTGRES_HOST", "127.0.0.1"),
     "port":     int(os.environ.get("POSTGRES_PORT", "5432")),
     "dbname":   os.environ.get("BERKA_DB", "berka"),
     "user":     os.environ.get("POSTGRES_USER", "airflow"),
