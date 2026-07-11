@@ -1,0 +1,27 @@
+# dbt/models/marts/_marts__models.yml
+version: 2
+
+models:
+  - name: fct_enriched_transactions
+    description: >
+      Fact table: transaction enriched với customer profile.
+      Batch Layer output — đầy đủ, chính xác, deduplicated.
+      Tương đương Speed Layer output nhưng re-processed toàn bộ.
+    columns:
+      - name: trans_id
+        description: "Primary key"
+        data_tests:
+          - unique
+          - not_null
+      - name: account_id
+        data_tests:
+          - not_null
+      - name: transaction_date
+        data_tests:
+          - not_null
+      - name: amount
+        data_tests:
+          - not_null
+      - name: client_id
+        data_tests:
+          - not_null

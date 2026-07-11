@@ -1,0 +1,64 @@
+# dbt/models/staging/berka/_berka__models.yml
+version: 2
+
+models:
+  - name: stg_berka__trans
+    description: "Staged transactions — deduplicated, types cast"
+    columns:
+      - name: trans_id
+        description: "Primary key — unique sau khi dedupe"
+        data_tests:
+          - unique          # bắt Duplicate corruption
+          - not_null
+      - name: account_id
+        data_tests:
+          # relationships test: bắt Referential integrity violation
+          - relationships:
+              arguments:
+                to: ref('stg_berka__account')
+                field: account_id
+              config:
+                severity: warn  # warn thay vì error vì corruption là intentional
+      - name: amount
+        data_tests:
+          - not_null
+
+  - name: stg_berka__account
+    description: "Staged accounts"
+    columns:
+      - name: account_id
+        data_tests:
+          - unique
+          - not_null
+
+  - name: stg_berka__client
+    description: "Staged clients với decoded gender và birth_date"
+    columns:
+      - name: client_id
+        data_tests:
+          - unique
+          - not_null
+      - name: gender
+        data_tests:
+          - accepted_values:
+              values: ['M', 'F']
+
+  - name: stg_berka__disposition
+    description: "Staged disposition — account <-> client links"
+    columns:
+      - name: disp_id
+        data_tests:
+          - unique
+          - not_null
+      - name: disposition_type
+        data_tests:
+          - accepted_values:
+              values: ['OWNER', 'DISPONENT']
+
+  - name: stg_berka__district
+    description: "Staged district demographic data"
+    columns:
+      - name: district_id
+        data_tests:
+          - unique
+          - not_null
