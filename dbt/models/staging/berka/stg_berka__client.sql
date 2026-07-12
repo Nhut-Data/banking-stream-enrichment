@@ -15,40 +15,39 @@ renamed as (
         -- Decode gender từ tháng
         birth_number,
 
-        case
-            when (birth_number % 10000 / 100) > 50 then 'F'
-            else 'M'
-        end as gender,
+        CASE
+            WHEN MOD(CAST(birth_number AS INT64), 10000) / 100 > 50 THEN 'F'
+            ELSE 'M'
+        END as gender,
 
         -- Decode ngày sinh
         -- Nữ: trừ 5000 để lấy lại YYMMDD thật
-        to_date(
-            '19' || lpad(
-                case
-                    when (birth_number % 10000 / 100) > 50
-                    then (birth_number - 5000)::text
-                    else birth_number::text
-                end,
-                6, '0'
-            ),
-            'YYYYMMDD'
+        PARSE_DATE('%Y%m%d',
+            CONCAT('19', LPAD(
+                CAST(
+                    CASE
+                        WHEN MOD(CAST(birth_number AS INT64), 10000) / 100 > 50
+                        THEN birth_number - 5000
+                        ELSE birth_number
+                    END
+                AS STRING),
+            6, '0'))
         ) as birth_date,
 
         -- Tính tuổi tại thời điểm cuối dataset (1998-12-31)
-        date_part('year', age(
-            date '1998-12-31',
-            to_date(
-                '19' || lpad(
-                    case
-                        when (birth_number % 10000 / 100) > 50
-                        then (birth_number - 5000)::text
-                        else birth_number::text
-                    end,
-                    6, '0'
-                ),
-                'YYYYMMDD'
-            )
-        ))::integer as age_at_end_of_dataset
+        DATE_DIFF(DATE '1998-12-31', 
+            PARSE_DATE('%Y%m%d',
+                CONCAT('19', LPAD(
+                    CAST(
+                        CASE
+                            WHEN MOD(CAST(birth_number AS INT64), 10000) / 100 > 50
+                            THEN birth_number - 5000
+                            ELSE birth_number
+                        END
+                    AS STRING),
+                6, '0'))
+            ),
+        YEAR) as age_at_end_of_dataset
 
     from source
 )

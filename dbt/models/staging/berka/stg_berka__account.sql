@@ -9,12 +9,11 @@ renamed as (
         account_id,
         district_id,
         frequency,
-        to_date(
-            case
-                when date::text like '9%' then '19' || date::text
-                else '19' || date::text
-            end,
-            'YYYYMMDD'
+        PARSE_DATE('%Y%m%d',
+            CASE
+                WHEN CAST(date AS STRING) LIKE '9%' THEN CONCAT('19', CAST(date AS STRING))
+                ELSE CONCAT('20', CAST(date AS STRING))
+            END
         ) as account_open_date
     from source
 )

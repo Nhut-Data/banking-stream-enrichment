@@ -31,13 +31,12 @@ renamed as (
         -- Date: convert YYMMDD integer sang DATE
         -- Berka dùng format YYMMDD nén thành INTEGER (vd: 930101 = 1993-01-01)
         -- Thêm prefix '19' vì data là 1993-1998
-        to_date(
+        PARSE_DATE('%Y%m%d',
             case
-                when date::text like '9%' then '19' || date::text
-                when date::text like '0%' then '20' || date::text  -- synthetic data 1999+
-                else '19' || date::text
-            end,
-            'YYYYMMDD'
+                when CAST(date AS STRING) like '0%' then '20' || CAST(date AS STRING)  -- synthetic data 1999+
+                when CAST(date AS STRING) like '9%' then '19' || CAST(date AS STRING)
+                else CONCAT('19', CAST(date AS STRING))
+            end
         ) as transaction_date,
 
         -- Transaction details

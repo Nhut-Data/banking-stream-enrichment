@@ -14,11 +14,10 @@ models:
         data_tests:
           # relationships test: bắt Referential integrity violation
           - relationships:
-              arguments:
-                to: ref('stg_berka__account')
-                field: account_id
+              to: ref('stg_berka__account')
+              field: account_id
               config:
-                severity: warn  # warn thay vì error vì corruption là intentional
+                severity: warn # warn thay vì error vì corruption là intentional
       - name: amount
         data_tests:
           - not_null
