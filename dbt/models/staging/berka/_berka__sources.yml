@@ -1,32 +1,55 @@
+# dbt/models/staging/berka/_berka__sources.yml
 version: 2
 
 sources:
   - name: berka
-    database: banking-data-platform-500108
-    schema: berka_raw
-    description: "Berka PKDD99 banking dataset — loaded from Postgres via CSV export"
+    database: banking-data-platform-500108   # ← BigQuery project ID
+    schema: berka_raw                         # ← BigQuery dataset chứa raw data
+    description: "Berka PKDD99 banking dataset — core banking simulation"
     tables:
       - name: trans
+        description: "Giao dịch ngân hàng — volume cao, CDC tracked"
         columns:
           - name: trans_id
-            data_tests: [not_null]
+            description: "Primary key"
+            data_tests:
+              - not_null
           - name: account_id
-            data_tests: [not_null]
+            description: "FK sang bảng account (không có DB constraint — intentional)"
+            data_tests:
+              - not_null
           - name: amount
-            data_tests: [not_null]
+            data_tests:
+              - not_null
+
       - name: account
+        description: "Tài khoản ngân hàng"
         columns:
           - name: account_id
-            data_tests: [not_null, unique]
+            data_tests:
+              - not_null
+              - unique
+
       - name: client
+        description: "Thông tin khách hàng"
         columns:
           - name: client_id
-            data_tests: [not_null, unique]
+            data_tests:
+              - not_null
+              - unique
+
       - name: disposition
+        description: "Liên kết client <-> account"
         columns:
           - name: disp_id
-            data_tests: [not_null, unique]
+            data_tests:
+              - not_null
+              - unique
+
       - name: district
+        description: "Thông tin demographic khu vực"
         columns:
           - name: district_id
-            data_tests: [not_null, unique]
+            data_tests:
+              - not_null
+              - unique

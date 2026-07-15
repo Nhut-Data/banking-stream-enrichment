@@ -33,3 +33,6 @@ load-data:
 
 load-data-synthetic:
 	python3 infra/postgres/load_berka.py --synthetic
+
+run-speed-layer:
+	python3 -m speed_layer.run
