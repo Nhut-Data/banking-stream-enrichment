@@ -243,7 +243,13 @@ CREATE INDEX idx_trans_date ON trans(date);
 CREATE INDEX idx_disposition_account_id ON disposition(account_id);
 CREATE INDEX idx_disposition_client_id ON disposition(client_id);
 
-
+-- Grant owner cho replicator — BẮT BUỘC cho Debezium filtered publication
+-- Nếu thiếu đoạn này, Debezium sẽ fail với "must be owner of table"
+ALTER TABLE district    OWNER TO replicator;
+ALTER TABLE account     OWNER TO replicator;
+ALTER TABLE client      OWNER TO replicator;
+ALTER TABLE disposition OWNER TO replicator;
+ALTER TABLE trans       OWNER TO replicator;
 -- =============================================================================
 -- PHẦN 4: Verify — in ra summary để xác nhận script chạy thành công
 -- Sẽ thấy output này trong docker compose logs postgres lần đầu up
