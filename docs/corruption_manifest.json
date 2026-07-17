@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-04T14:55:14.393209+00:00",
+  "generated_at": "2026-07-17T07:42:41.332172+00:00",
   "random_seed": 42,
   "description": "Audit log của các lỗi tiêm có chủ đích vào synthetic Berka data. Dùng để đối chiếu với kết quả dbt test và Speed Layer DLQ. Committed vào git tại docs/ làm bằng chứng phỏng vấn.",
   "datasets": {
