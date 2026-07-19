@@ -1,0 +1,502 @@
+# =============================================================================
+# docker-compose.yml — Banking Stream-Table Join Enrichment Platform
+#
+# Adapted từ Apache Airflow 3.x official docker-compose (CeleryExecutor)
+# Bổ sung: Kafka KRaft, Debezium CDC, kafka-ui, streaming services
+#
+# PROFILES:
+#   (default)           → postgres, redis, kafka, kafka-init, kafka-ui, debezium
+#   --profile airflow   → + toàn bộ Airflow stack
+#   --profile streaming → + producer, consumer (speed_layer)
+#   --profile flower    → + Celery Flower monitoring
+#   --profile debug     → + airflow-cli
+#
+# Usage:
+#   make up             → core stack only
+#   make up-airflow     → docker compose --profile airflow up -d
+#   make up-streaming   → docker compose --profile streaming up -d
+#   make up-all         → docker compose --profile airflow --profile streaming up -d
+# =============================================================================
+
+x-airflow-common:
+  &airflow-common
+  build: .
+  env_file:
+    - ${ENV_FILE_PATH:-.env}
+  environment:
+    &airflow-common-env
+    AIRFLOW__CORE__EXECUTOR: CeleryExecutor
+    AIRFLOW__CORE__AUTH_MANAGER: airflow.providers.fab.auth_manager.fab_auth_manager.FabAuthManager
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${AIRFLOW_DB:-airflow}
+    AIRFLOW__CELERY__RESULT_BACKEND: db+postgresql+psycopg2://${POSTGRES_USER:-airflow}:${POSTGRES_PASSWORD:-airflow}@postgres/${AIRFLOW_DB:-airflow}
+    AIRFLOW__CELERY__BROKER_URL: redis://:@redis:6379/0
+    AIRFLOW__CORE__FERNET_KEY: ${FERNET_KEY}
+    AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 'true'
+    AIRFLOW__CORE__LOAD_EXAMPLES: 'false'
+    AIRFLOW__CORE__EXECUTION_API_SERVER_URL: 'http://airflow-apiserver:8080/execution/'
+    AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW__API_AUTH__JWT_SECRET:-airflow_jwt_secret}
+    AIRFLOW__API_AUTH__JWT_ISSUER: ${AIRFLOW__API_AUTH__JWT_ISSUER:-airflow}
+    AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: 'true'
+    _PIP_ADDITIONAL_REQUIREMENTS: "apache-airflow-providers-google dbt-bigquery==1.9.0 dbt-core==1.9.0"
+    #_PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
+    AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
+    PYTHONPATH: /opt/airflow
+    BANKING_DB_HOST: postgres
+    BANKING_DB_NAME: ${BERKA_DB:-berka}
+    BANKING_DB_USER: ${POSTGRES_USER:-airflow}
+    BANKING_DB_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+  volumes:
+    - ./airflow/dags:/opt/airflow/dags
+    - ./airflow/logs:/opt/airflow/logs
+    - ./airflow/config:/opt/airflow/config
+    - ./airflow/plugins:/opt/airflow/plugins
+    - ./src:/opt/airflow/src
+    - ./dbt:/opt/airflow/dbt     
+    - ./sql:/opt/airflow/sql
+    - ./data:/opt/airflow/data
+    - ./secrets:/opt/airflow/secrets
+    - ${HOME}/.config/gcloud:/home/airflow/.config/gcloud:ro
+  user: "${AIRFLOW_UID:-50000}:0"
+  depends_on:
+    &airflow-common-depends-on
+    redis:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # 1. PostgreSQL 16 — Berka data + Airflow metadata
+  #
+  # 2 databases trong cùng 1 instance:
+  #   - airflow  → Airflow metadata (POSTGRES_DB mặc định)
+  #   - berka    → Berka banking data (tạo bởi 001_init.sql)
+  #
+  # wal_level=logical BẮT BUỘC cho Debezium CDC:
+  # Debezium dùng logical replication để đọc WAL, không phải polling.
+  # Mặc định Postgres là wal_level=replica — Debezium sẽ fail khi tạo
+  # replication slot nếu không set logical.
+  # ---------------------------------------------------------------------------
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-airflow}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-airflow}
+      POSTGRES_DB: ${AIRFLOW_DB:-airflow}
+    command:
+      - "postgres"
+      - "-c"
+      - "wal_level=logical"
+      - "-c"
+      - "max_replication_slots=10"
+      - "-c"
+      - "max_wal_senders=10"
+    volumes:
+      - banking_postgres_data:/var/lib/postgresql/data
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-airflow}"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # 2. Redis — Celery broker cho Airflow CeleryExecutor
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7.2-bookworm
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 30s
+      retries: 50
+      start_period: 30s
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # 3. Kafka (KRaft) — Message Broker
+  #
+  # apache/kafka:3.9.0 — Apache official image, không phải Confluent
+  #
+  # Listeners:
+  #   PLAINTEXT://kafka:9092  — internal (Debezium, producer, consumer)
+  #   EXTERNAL://localhost:9094 — external từ host (test local, kafka-ui)
+  #
+  # AUTO_CREATE_TOPICS=false: topics phải tạo explicit qua kafka-init
+  # ---------------------------------------------------------------------------
+  kafka:
+    image: confluentinc/cp-kafka:7.6.1
+    container_name: berka-kafka
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://kafka:9092,CONTROLLER://kafka:9093,EXTERNAL://0.0.0.0:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      CLUSTER_ID: FpS5oa3wRsShmKnaESuSeQ
+    ports:
+      - "9094:9094"
+    volumes:
+      - banking_kafka_data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD", "kafka-topics", "--bootstrap-server", "kafka:9092", "--list"]
+      interval: 15s
+      timeout: 20s
+      retries: 10
+      start_period: 30s
+    restart: always
+  # ---------------------------------------------------------------------------
+  # 4. kafka-init — Tạo tất cả Kafka topics khi stack khởi động lần đầu
+  #
+  # CDC topics (Debezium publish vào đây theo topic prefix "cdc.public."):
+  #   cdc.public.trans        — transaction stream, 3 partitions (volume CAO)
+  #   cdc.public.client       — customer profile   1 partition  (volume THẤP)
+  #   cdc.public.disposition  — account-client     1 partition  (volume THẤP)
+  #   cdc.public.account      — account info       1 partition  (volume THẤP)
+  #   cdc.public.district     — district demo      1 partition  (volume THẤP)
+  #
+  # Application topics:
+  #   transactions.events     — enriched output từ speed_layer, 3 partitions
+  #   transactions.dlq        — Dead-Letter Queue cho referential violation
+  #
+  # Debezium internal topics (compact, tạo trước để Debezium không tự tạo sai):
+  #   debezium.configs / debezium.offsets / debezium.status
+  # ---------------------------------------------------------------------------
+  kafka-init:
+    image: confluentinc/cp-kafka:7.6.1
+    depends_on:
+      kafka:
+        condition: service_healthy
+    command:
+      - bash
+      - -c
+      - |
+        echo "Tạo topics..."
+        kafka-topics --create --if-not-exists \
+          --bootstrap-server kafka:9092 \
+          --topic cdc.public.trans \
+          --partitions 3 --replication-factor 1 \
+          --config retention.ms=604800000
+
+        for table in client disposition account district; do
+          kafka-topics --create --if-not-exists \
+            --bootstrap-server kafka:9092 \
+            --topic cdc.public.$${table} \
+            --partitions 1 --replication-factor 1
+        done
+
+        kafka-topics --create --if-not-exists \
+          --bootstrap-server kafka:9092 \
+          --topic transactions.events \
+          --partitions 3 --replication-factor 1
+
+        kafka-topics --create --if-not-exists \
+          --bootstrap-server kafka:9092 \
+          --topic transactions.dlq \
+          --partitions 1 --replication-factor 1
+
+        for topic in debezium.configs debezium.offsets debezium.status; do
+          kafka-topics --create --if-not-exists \
+            --bootstrap-server kafka:9092 \
+            --topic $$topic \
+            --partitions 1 --replication-factor 1 \
+            --config cleanup.policy=compact
+        done
+
+        echo "Done:"
+        kafka-topics --list --bootstrap-server kafka:9092
+    restart: "no"
+
+  # ---------------------------------------------------------------------------
+  # 5. kafka-ui — Visualize Kafka topics và messages
+  # Truy cập: http://localhost:8085
+  # Dùng để: xem CDC events real-time, verify Debezium, demo phỏng vấn
+  # ---------------------------------------------------------------------------
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    ports:
+      - "8085:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: banking-platform
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: always
+
+  # ---------------------------------------------------------------------------
+  # 6. Debezium Connect — CDC: Postgres WAL → Kafka topics
+  #
+  # debezium/connect:3.0 tương thích apache/kafka:3.9.0
+  #
+  # Sau khi container healthy, đăng ký connector:
+  #   make register-connector
+  #   hoặc: curl -X POST http://localhost:8083/connectors \
+  #            -H "Content-Type: application/json" \
+  #            -d @infra/debezium/connector-config.json
+  #
+  # depends_on kafka-init để đảm bảo debezium.configs/offsets/status
+  # đã tồn tại trước khi Debezium Connect khởi động.
+  # ---------------------------------------------------------------------------
+  debezium-connect:
+    image: quay.io/debezium/connect:3.0
+    container_name: berka-debezium
+    ports:
+      - "8083:8083"
+    environment:
+      BOOTSTRAP_SERVERS: kafka:9092
+      GROUP_ID: debezium-connect-group
+      CONFIG_STORAGE_TOPIC: debezium.configs
+      OFFSET_STORAGE_TOPIC: debezium.offsets
+      STATUS_STORAGE_TOPIC: debezium.status
+      CONFIG_STORAGE_REPLICATION_FACTOR: 1
+      OFFSET_STORAGE_REPLICATION_FACTOR: 1
+      STATUS_STORAGE_REPLICATION_FACTOR: 1
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8083/connectors > /dev/null"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 45s
+    restart: always
+  # ---------------------------------------------------------------------------
+  # Airflow services — profile: airflow
+  # ---------------------------------------------------------------------------
+  airflow-apiserver:
+    <<: *airflow-common
+    profiles: [airflow]
+    command: api-server
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/api/v2/monitor/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    profiles: [airflow]
+    command: scheduler
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8974/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-dag-processor:
+    <<: *airflow-common
+    profiles: [airflow]
+    command: dag-processor
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type DagProcessorJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-worker:
+    <<: *airflow-common
+    profiles: [airflow]
+    command: celery worker
+    healthcheck:
+      test: ["CMD-SHELL", 'celery --app airflow.providers.celery.executors.celery_executor.app inspect ping -d "celery@$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    environment:
+      <<: *airflow-common-env
+      DUMB_INIT_SETSID: "0"
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-apiserver:
+        condition: service_healthy
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    profiles: [airflow]
+    command: triggerer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-init:
+    <<: *airflow-common
+    profiles: [airflow]
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        if [[ -z "${AIRFLOW_UID}" ]]; then
+          echo -e "\033[1;33mWARNING!!!: AIRFLOW_UID not set!\e[0m"
+          export AIRFLOW_UID=$$(id -u)
+        fi
+        one_meg=1048576
+        mem_available=$$(($$(getconf _PHYS_PAGES) * $$(getconf PAGE_SIZE) / one_meg))
+        cpus_available=$$(grep -cE 'cpu[0-9]+' /proc/stat)
+        disk_available=$$(df / | tail -1 | awk '{print $$4}')
+        warning_resources="false"
+        if (( mem_available < 4000 )) ; then
+          echo -e "\033[1;33mWARNING!!!: Not enough memory. Need 4GB+\e[0m"
+          warning_resources="true"
+        fi
+        if (( cpus_available < 2 )); then
+          echo -e "\033[1;33mWARNING!!!: Need 2+ CPUs\e[0m"
+          warning_resources="true"
+        fi
+        if (( disk_available < one_meg * 10 )); then
+          echo -e "\033[1;33mWARNING!!!: Need 10GB+ disk\e[0m"
+          warning_resources="true"
+        fi
+        mkdir -v -p /opt/airflow/{logs,dags,plugins,config}
+        /entrypoint airflow version
+        /entrypoint airflow config list >/dev/null
+        chown -R "${AIRFLOW_UID}:0" /opt/airflow/
+        chown -v -R "${AIRFLOW_UID}:0" /opt/airflow/{logs,dags,plugins,config}
+    environment:
+      <<: *airflow-common-env
+      _AIRFLOW_DB_MIGRATE: 'true'
+      _AIRFLOW_WWW_USER_CREATE: 'true'
+      _AIRFLOW_WWW_USER_USERNAME: ${_AIRFLOW_WWW_USER_USERNAME:-airflow}
+      _AIRFLOW_WWW_USER_PASSWORD: ${_AIRFLOW_WWW_USER_PASSWORD:-airflow}
+      _PIP_ADDITIONAL_REQUIREMENTS: ''
+    user: "0:0"
+
+  airflow-cli:
+    <<: *airflow-common
+    profiles: [debug]
+    environment:
+      <<: *airflow-common-env
+      CONNECTION_CHECK_MAX_COUNT: "0"
+    command:
+      - bash
+      - -c
+      - airflow
+    depends_on:
+      <<: *airflow-common-depends-on
+
+  flower:
+    <<: *airflow-common
+    profiles: [flower]
+    command: celery flower
+    ports:
+      - "5555:5555"
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:5555/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  # ---------------------------------------------------------------------------
+  # Speed Layer — profile: streaming
+  # ---------------------------------------------------------------------------
+  producer:
+    profiles: [streaming]
+    build:
+      context: .
+      dockerfile: infra/docker/streaming/Dockerfile
+    command: python -m src.streaming.producer
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BANKING_DB_HOST: postgres
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+    restart: on-failure
+
+  consumer:
+    profiles: [streaming]
+    build:
+      context: .
+      dockerfile: infra/docker/streaming/Dockerfile
+    command: python -m src.streaming.consumer
+    env_file:
+      - .env
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      BANKING_DB_HOST: postgres
+      BANKING_DB_NAME: ${BERKA_DB:-berka}
+    volumes:
+      - ./src:/app/src
+      - ./data:/app/data
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+
+# =============================================================================
+# Volumes — xóa hoàn toàn: docker compose down -v
+# =============================================================================
+# Đúng — tên có namespace riêng cho repo này
+volumes:
+  banking_postgres_data:
+  banking_kafka_data:
+
+# =============================================================================
+# Network
+# =============================================================================
+networks:
+  default:
+    name: banking-platform-net

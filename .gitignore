@@ -70,5 +70,4 @@ Thumbs.db
 # Docker
 # ---------------------------------------------------------------------------
 *.log
-docker-compose.yaml
 airflow/config/airflow.cfg
