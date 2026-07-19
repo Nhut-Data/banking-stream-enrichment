@@ -188,3 +188,6 @@ banking-stream-enrichment/
     ├── unit/
     └── integration/
 ```
+
+## Live Demo
+[📊 Looker Studio Dashboard](<https://datastudio.google.com/reporting/d385a2f5-2e41-4454-acdc-3580f5df032d>)
