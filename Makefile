@@ -13,7 +13,8 @@ setup:
 
 up:
 	docker compose up -d
-
+up-airflow:
+	docker compose --profile airflow up -d
 down:
 	docker compose down
 
@@ -31,8 +32,8 @@ register-connector:
 load-data:
 	python3 infra/postgres/load_berka.py
 
-load-data-synthetic:
-	python3 infra/postgres/load_berka.py --synthetic
+load-data-loadtest:
+	python3 infra/postgres/load_trans_loadtest.py
 
 run-speed-layer:
 	python3 -m speed_layer.run
