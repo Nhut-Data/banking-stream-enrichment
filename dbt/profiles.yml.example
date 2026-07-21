@@ -1,0 +1,11 @@
+banking_enrichment:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: oauth
+      project: your-gcp-project-id
+      dataset: banking_enrichment
+      location: US
+      threads: 4
+      timeout_seconds: 300
