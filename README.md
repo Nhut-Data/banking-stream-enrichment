@@ -165,6 +165,8 @@ Các quyết định kiến trúc quan trọng được document trong `docs/dec
 - [ADR 002](docs/decisions/002-berka-only-no-ibm-aml.md) — Berka dataset thay vì IBM AML / PaySim
 - [ADR 003](docs/decisions/003-synthetic-data-generation.md) — Synthetic Data Generation để test hạ tầng
 - [ADR 004](docs/decisions/004-deploy-once-no-cloud-sql.md) — Deploy 1 lần, không dùng Cloud SQL thường trực
+- [ADR 005](docs/decisions/005-airflow3-taskflow-migration.md) — Migration sang TaskFlow API cho Airflow 3.x
+- [ADR 006](docs/decisions/006-staging-table-dedup-load-test.md) — Staging table + ON CONFLICT cho xử lý duplicate load test
 
 ---
 
