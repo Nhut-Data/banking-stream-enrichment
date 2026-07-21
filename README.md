@@ -34,12 +34,12 @@ Berka CSV → PostgreSQL → Debezium CDC → Kafka → Speed Layer → BigQuery
 
 - Docker Desktop + WSL2
 - Python 3.10+
-- `kafka-python==2.0.2`, `psycopg2-binary`, `dbt-postgres`
+- `kafka-python==2.0.2`, `psycopg2-binary`, `dbt-bigquery`
 
 ### 1. Clone và setup
 
 ```bash
-git clone https://github.com/NhutData/banking-stream-enrichment.git
+git clone https://github.com/Nhut-Data/banking-stream-enrichment.git
 cd banking-stream-enrichment
 cp .env.example .env
 ```
@@ -58,23 +58,13 @@ docker compose ps
 # Đặt Berka CSV files vào data/raw/
 # Download từ: https://sorry.vse.cz/~berka/challenge/pkdd1999/berka.htm
 
-# Load 5 bảng vào Postgres qua docker cp (bypass WSL2 socket issue)
-docker cp data/raw/district.csv banking-stream-enrichment-postgres-1:/tmp/
-docker cp data/raw/account.csv  banking-stream-enrichment-postgres-1:/tmp/
-docker cp data/raw/client.csv   banking-stream-enrichment-postgres-1:/tmp/
-docker cp data/raw/disp.csv     banking-stream-enrichment-postgres-1:/tmp/
-docker cp data/raw/trans.csv    banking-stream-enrichment-postgres-1:/tmp/
+make load-data
+```
 
-docker exec banking-stream-enrichment-postgres-1 psql -U airflow -d berka -c \
-  "COPY district FROM '/tmp/district.csv' WITH (FORMAT csv, HEADER true, DELIMITER ';', QUOTE '\"', NULL '?');"
-docker exec banking-stream-enrichment-postgres-1 psql -U airflow -d berka -c \
-  "COPY account FROM '/tmp/account.csv' WITH (FORMAT csv, HEADER true, DELIMITER ';', QUOTE '\"');"
-docker exec banking-stream-enrichment-postgres-1 psql -U airflow -d berka -c \
-  "COPY client FROM '/tmp/client.csv' WITH (FORMAT csv, HEADER true, DELIMITER ';', QUOTE '\"');"
-docker exec banking-stream-enrichment-postgres-1 psql -U airflow -d berka -c \
-  "COPY disposition (disp_id, client_id, account_id, type) FROM '/tmp/disp.csv' WITH (FORMAT csv, HEADER true, DELIMITER ';', QUOTE '\"');"
-docker exec banking-stream-enrichment-postgres-1 psql -U airflow -d berka -c \
-  "COPY trans (trans_id, account_id, date, type, operation, amount, balance, k_symbol, bank, account) FROM '/tmp/trans.csv' WITH (FORMAT csv, HEADER true, DELIMITER ';', QUOTE '\"', NULL '');"
+Muốn test ở quy mô lớn hơn (load test), tham khảo [docs/load_test_results.md](docs/load_test_results.md):
+```bash
+make generate            # sinh thêm data/output/trans_loadtest.csv (~1M dòng)
+make load-data-loadtest  # append vào bảng trans, tự dedupe duplicate injection
 ```
 
 ### 4. Đăng ký Debezium CDC connector
@@ -104,8 +94,21 @@ docker run --rm -it \
 
 ```bash
 cd dbt
-dbt run    # 7 models
-dbt test   # 31 tests
+dbt run --profiles-dir .   # 7 models
+dbt test --profiles-dir .  # 31 tests
+```
+
+### 7. Orchestration qua Airflow (tùy chọn)
+
+```bash
+make up-airflow
+# UI tại http://localhost:8080 (airflow/airflow)
+```
+
+DAG `banking_batch_enrichment` viết theo TaskFlow API (`@dag`, `@task.bash`) — chuẩn Airflow 3.x, thay cho `BashOperator` cổ điển. Trigger thủ công qua UI hoặc:
+```bash
+docker exec -it banking-stream-enrichment-airflow-scheduler-1 \
+  airflow dags trigger banking_batch_enrichment
 ```
 
 ---
@@ -148,7 +151,7 @@ Chi tiết: [`docs/corruption_manifest.json`](docs/corruption_manifest.json)
 | Message Broker | Confluent Kafka 7.6.1 (KRaft) |
 | Stream Processing | Python + kafka-python |
 | Orchestration | Apache Airflow 3.x (CeleryExecutor) |
-| Transformation | dbt-postgres 1.10 |
+| Transformation | dbt-bigquery 1.12 |
 | Serving | BigQuery (Google Cloud) |
 | Monitoring | Kafka UI |
 
@@ -191,3 +194,6 @@ banking-stream-enrichment/
 
 ## Live Demo
 [📊 Looker Studio Dashboard](<https://datastudio.google.com/reporting/d385a2f5-2e41-4454-acdc-3580f5df032d>)
+
+## Cloud Load Test
+Đã load test trên GCP Compute Engine, tăng gấp đôi volume dữ liệu (~1M → ~2M giao dịch). Chi tiết + 1 bug thực tế phát hiện được: [docs/load_test_results.md](docs/load_test_results.md)
