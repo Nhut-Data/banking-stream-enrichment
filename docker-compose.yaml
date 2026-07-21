@@ -50,11 +50,8 @@ x-airflow-common:
     - ./airflow/logs:/opt/airflow/logs
     - ./airflow/config:/opt/airflow/config
     - ./airflow/plugins:/opt/airflow/plugins
-    - ./src:/opt/airflow/src
     - ./dbt:/opt/airflow/dbt     
-    - ./sql:/opt/airflow/sql
     - ./data:/opt/airflow/data
-    - ./secrets:/opt/airflow/secrets
     - ${HOME}/.config/gcloud:/home/airflow/.config/gcloud:ro
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
