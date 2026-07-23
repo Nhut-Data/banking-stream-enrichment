@@ -27,9 +27,9 @@ Done. PASS=30 WARN=1 ERROR=0 SKIP=0 NO-OP=0 REUSED=0 TOTAL=31
 
 **Vị trí:** `dbt/models/staging/berka/stg_berka__trans.sql` — logic parse cột `date` (kiểu `INTEGER`, format Berka `YYMMDD`) sang kiểu `DATE`.
 
-**Nguyên nhân:** Dataset gốc (1993–1998) luôn có mã ngày bắt đầu bằng chữ số `9` (ví dụ `930101`), nên không bao giờ mất số 0 đầu khi lưu dưới dạng `INTEGER`. Dữ liệu synthetic bổ sung có giao dịch rơi vào giai đoạn 2000–2009, sinh ra mã ngày bắt đầu bằng `0` (ví dụ ngày 17/10/2000 = `001017`). Khi ép kiểu `INTEGER`, số 0 đầu bị cắt mất (`001017` → `1017`), khiến logic phân biệt thế kỷ (dựa trên ký tự đầu của chuỗi) tính sai độ dài chuỗi đầu vào cho `PARSE_DATE`, gây lỗi:
+**Nguyên nhân (root cause chính xác, xác nhận qua unit test viết sau đó):** Vấn đề bắt nguồn từ chính `data_generation/generator.py` — hàm `_date_to_berka_int()` dùng `int(ts.strftime('%y%m%d'))` để encode ngày tháng, và với năm 2000–2009 (`yy` = `00`-`09`), `int()` cắt mất số 0 đầu ngay tại thời điểm sinh data (VD: 2000-01-01 → sinh ra `101`, không phải `000101`). Postgres và BigQuery chỉ trung thực lưu lại đúng giá trị đã mất thông tin này — không phải nơi gây ra lỗi. Điều này khiến logic phân biệt thế kỷ ở `stg_berka__trans.sql` (dựa trên ký tự đầu của chuỗi, giả định luôn đủ 6 ký tự) tính sai, gây lỗi:
 Failed to parse input string "191017"
-**Fix:** Thêm `LPAD(CAST(date AS STRING), 6, '0')` để phục hồi số 0 đầu trước khi áp dụng logic phân biệt thế kỷ.
+**Fix:** Thêm `LPAD(CAST(date AS STRING), 6, '0')` ở tầng dbt để phục hồi số 0 đầu trước khi áp dụng logic phân biệt thế kỷ — đây là fix đúng vị trí (chặn tại staging layer, nơi mọi downstream consumer đều được bảo vệ), dù root cause thật nằm sớm hơn ở generator. Một unit test (`test_date_stored_as_raw_int_can_lose_leading_zero_documented_behavior`) được thêm sau đó để document rõ hành vi này, đảm bảo nếu generator được sửa để tự zero-pad trong tương lai, sẽ có cảnh báo để rà lại xem LPAD ở dbt còn cần thiết không.
 
 **Ý nghĩa:** Đây là edge case mà dataset Berka gốc (giới hạn trong khung thời gian 1993–1998) không thể bộc lộ — chỉ xuất hiện khi mở rộng dữ liệu sang thập niên 2000+. Minh chứng rõ ràng cho giá trị thực tế của load testing: không chỉ đo hiệu năng, mà còn phát hiện lỗi tiềm ẩn nằm ngoài phạm vi dữ liệu test thông thường.
 

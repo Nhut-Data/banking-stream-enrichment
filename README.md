@@ -128,7 +128,7 @@ The 2M-row load test ran on a real GCP Compute Engine VM, not just locally — w
 
 Being upfront about what's not done yet, in priority order:
 
-- [ ] **Python unit tests are scaffolded but not written** (`tests/unit/`, `tests/integration/`) — the 31 "tests" referenced above are dbt SQL-based data tests, not Python unit tests. Priority: `speed_layer/enrichment.py::enrich()` first (pure function, no I/O, fast to test).
+- [x] ~~Python unit tests scaffolded but not written~~ — **Done**: 44 tests covering `enrich()`, `corruption.inject()`, `generator.generate()`, plus an integration test verifying injected corruption rates match config end-to-end.
 - [ ] **No CI/CD pipeline yet** — no `.github/workflows/`. Next step: a GitHub Actions workflow running `pytest` + `dbt test` on push.
 - [ ] **Exactly-once delivery not implemented** — see Delivery Semantics above.
 - [ ] Batch Layer re-processes the full dataset every run rather than incrementally — acceptable at current volume, would need an incremental dbt materialization strategy at larger scale.
