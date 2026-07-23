@@ -1,3 +1,7 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "banking-stream-enrichment"
 version = "0.1.0"
@@ -9,6 +13,9 @@ dev = [
     "pytest>=7.0",
     "pytest-cov",
 ]
+
+[tool.setuptools]
+packages = ["speed_layer", "data_generation"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
