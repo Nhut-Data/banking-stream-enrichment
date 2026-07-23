@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    name: Python unit + integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          pip install -e ".[dev]"
+          pip install pytest-mock
+
+      - name: Run pytest (44 tests — enrich, corruption, generator, integration)
+        run: python3 -m pytest tests/ -v
+
+  dbt-parse:
+    name: dbt syntax + ref/source validation (no warehouse connection)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: "pip"
+
+      - name: Install dbt-bigquery
+        run: pip install dbt-bigquery
+
+      - name: Use placeholder profiles.yml (no real credentials needed for parse)
+        run: cp dbt/profiles.yml.example dbt/profiles.yml
+
+      - name: dbt parse (validates Jinja + ref/source graph, no BigQuery connection)
+        working-directory: dbt
+        run: dbt parse --profiles-dir .

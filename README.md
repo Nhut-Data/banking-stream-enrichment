@@ -1,5 +1,7 @@
 # Banking Stream-Table Join Enrichment Platform
 
+![CI](https://github.com/Nhut-Data/banking-stream-enrichment/actions/workflows/ci.yml/badge.svg)
+
 **A CDC-based real-time transaction enrichment pipeline, built to mirror the infrastructure a bank's fraud-detection team would run before data reaches an ML model.**
 
 High-volume transaction streams are enriched with customer profile context (region, income bracket, account tenure) at the moment they occur — not hours later in a batch job. This is the same architectural pattern (Stream-Table Join) used in production fraud detection systems, deliberately chosen over a full Lambda Architecture to reduce operational complexity while keeping real-time guarantees.
@@ -129,7 +131,7 @@ The 2M-row load test ran on a real GCP Compute Engine VM, not just locally — w
 Being upfront about what's not done yet, in priority order:
 
 - [x] ~~Python unit tests scaffolded but not written~~ — **Done**: 44 tests covering `enrich()`, `corruption.inject()`, `generator.generate()`, plus an integration test verifying injected corruption rates match config end-to-end.
-- [ ] **No CI/CD pipeline yet** — no `.github/workflows/`. Next step: a GitHub Actions workflow running `pytest` + `dbt test` on push.
+- [x] ~~No CI/CD pipeline~~ — **Done**: GitHub Actions runs 44 pytest tests + `dbt parse` (Jinja/ref validation, no warehouse connection) on every push. `dbt test` against live BigQuery intentionally kept manual — storing warehouse credentials as a secret on a public repo isn't a trade-off worth making for a portfolio project.
 - [ ] **Exactly-once delivery not implemented** — see Delivery Semantics above.
 - [ ] Batch Layer re-processes the full dataset every run rather than incrementally — acceptable at current volume, would need an incremental dbt materialization strategy at larger scale.
 
