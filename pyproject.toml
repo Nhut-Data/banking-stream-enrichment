@@ -7,11 +7,17 @@ name = "banking-stream-enrichment"
 version = "0.1.0"
 description = "Real-time transaction enrichment pipeline using Berka dataset"
 requires-python = ">=3.10"
+dependencies = [
+    "kafka-python==2.0.2",
+    "numpy",
+    "pandas",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
     "pytest-cov",
+    "pytest-mock",
 ]
 
 [tool.setuptools]
