@@ -43,7 +43,7 @@ Failed to parse input string "191017"
 
 Dashboard Looker Studio (kết nối live tới BigQuery, không phải ảnh chụp tĩnh) tự động phản ánh số liệu mới ngay sau khi load test hoàn tất — scorecard "Record Count" hiển thị đúng **2,036,711**, khớp với kết quả `dbt run`.
 
-[📊 Xem Dashboard](<dán link Looker Studio của bạn vào đây>)
+[📊 Xem Dashboard](<https://datastudio.google.com/reporting/d385a2f5-2e41-4454-acdc-3580f5df032d>)
 
 ## Các commit liên quan
 
